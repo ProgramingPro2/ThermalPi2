@@ -21,6 +21,8 @@ from .image_utils import (
     get_percentile_range,
     normalize_to_uint8,
     apply_colormap,
+    otsu_threshold,
+    remove_bg_mask,
 )
 
 __all__ = [
@@ -33,6 +35,8 @@ __all__ = [
     "get_percentile_range",
     "normalize_to_uint8",
     "apply_colormap",
+    "otsu_threshold",
+    "remove_bg_mask",
     "DeviceCommand",
     "SEEK_VENDOR_ID",
     "SEEK_COMPACT_XR_PRODUCT_ID",

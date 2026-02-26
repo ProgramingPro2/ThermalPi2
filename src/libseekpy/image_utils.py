@@ -1,6 +1,6 @@
 """
 Image utilities: 14-bit to 8-bit grayscale conversion (histogram enhancement),
-optional colormap for display.
+optional colormap for display, background-removal (Otsu, percentile, blob filter).
 """
 
 from typing import Optional, Tuple
@@ -8,6 +8,67 @@ from typing import Optional, Tuple
 import numpy as np
 
 NUM_BINS = 10
+OTSU_BINS = 256
+
+
+def otsu_threshold(arr_uint16: np.ndarray) -> float:
+    """
+    Otsu's method: threshold that best separates two classes (e.g. background vs
+    foreground). Uses 256-bin histogram. Returns threshold in 16-bit value range.
+    """
+    a = np.asarray(arr_uint16, dtype=np.float64).ravel()
+    lo, hi = float(np.min(a)), float(np.max(a))
+    if hi <= lo:
+        return lo
+    hist, bin_edges = np.histogram(a, bins=OTSU_BINS, range=(lo, hi))
+    total = hist.sum()
+    if total == 0:
+        return lo
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+    cumsum = np.cumsum(hist)
+    sum_weighted = np.cumsum(hist * bin_centers)
+    best_var = -1.0
+    best_t = 0
+    for t in range(1, OTSU_BINS):
+        w_b = cumsum[t - 1] / total
+        w_f = 1.0 - w_b
+        if w_b <= 0 or w_f <= 0:
+            continue
+        m_b = sum_weighted[t - 1] / cumsum[t - 1]
+        m_f = (sum_weighted[-1] - sum_weighted[t - 1]) / (total - cumsum[t - 1])
+        var_between = w_b * w_f * (m_b - m_f) ** 2
+        if var_between > best_var:
+            best_var = var_between
+            best_t = t
+    return float(bin_edges[best_t])
+
+
+def remove_bg_mask(
+    frame_uint16: np.ndarray,
+    threshold: float,
+    keep_top_n_blobs: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Binary mask: True where frame >= threshold. If keep_top_n_blobs is set,
+    keep only the largest N connected components (by area); rest become False.
+    """
+    mask = (np.asarray(frame_uint16, dtype=np.float64) >= threshold).astype(np.uint8)
+    if keep_top_n_blobs is None or keep_top_n_blobs <= 0:
+        return mask.astype(bool)
+    try:
+        import cv2
+    except ImportError:
+        return mask.astype(bool)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask * 255, connectivity=8)
+    if num_labels <= 1:
+        return mask.astype(bool)
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    top_indices = np.argsort(areas)[::-1][:keep_top_n_blobs]
+    keep_labels = set((i + 1 for i in top_indices))
+    out = np.zeros_like(mask, dtype=bool)
+    for lab in keep_labels:
+        out[labels == lab] = True
+    return out
 
 
 def convert_to_greyscale(arr_uint16: np.ndarray) -> np.ndarray:

@@ -81,10 +81,10 @@ From project root after `pip install -e .` (or with `PYTHONPATH=src`):
   Uses matplotlib (no GTK/OpenCV GUI required). No warmup by default; optional `--warmup N`.  
   Contrast: `--range-mode auto|fixed|smoothed|percentile|mean_centered` (default: auto, or fixed if both `--vmin` and `--vmax` set).  
   `mean_centered` = fixed span (default 600) centered on smoothed frame mean; use `--span N`, `--smooth-alpha`.  
-  Options: `-F flat_field.png` (test FFC), `--colormap inferno`, `--no-colormap`, `--hist`, `--remove-bg` (keep only top 25%% heat). Keys: `s` freeze, `q` quit.
+  Options: `-F flat_field.png` (test FFC), `--colormap inferno`, `--no-colormap`, `--hist`, `--remove-bg` (Otsu/percentile/fixed threshold, optional blob filter, optional smooth). Keys: `s` freeze, `q` quit.
 
 - **Snapshot:** `python -m libseekpy.cli.run_snapshot [output.png]`  
-  Options: `-n count`, `-F flat_field.png` (test FFC), `--range-mode auto|fixed|percentile`, `--vmin`/`--vmax` (for fixed), `--percentile LOW HIGH` (for percentile), `--hist`, `--remove-bg`, `--16bit`, `--colormap COLORMAP_INFERNO`.
+  Options: `-n count`, `-F flat_field.png` (test FFC), `--range-mode auto|fixed|percentile`, `--vmin`/`--vmax` (for fixed), `--percentile LOW HIGH` (for percentile), `--hist`, `--remove-bg` (mode/thresh/blobs), `--16bit`, `--colormap COLORMAP_INFERNO`.
 
 - **Debug capture:** `python -m libseekpy.cli.run_debug_capture`  
   Saves debug_thermal.png, debug_thermal_grey.png, debug_thermal_16bit.png. Optional `--warmup N`, `-F flat_field.png`, `--vmin` / `--vmax`.
@@ -142,6 +142,34 @@ python -m libseekpy.cli.run_snapshot --vmin 10000 --vmax 20000 out.png
 
 Snapshot does not support `smoothed` (single-frame capture). Use `--hist` for histogram-based enhancement instead of min/max or percentile.
 
+## Remove background (--remove-bg)
+
+With `--remove-bg`, pixels below a threshold are forced to black so only warmer regions (e.g. a person) stay visible. Three threshold modes:
+
+| Mode | Description |
+|------|-------------|
+| **otsu** (default) | Bimodal threshold: separates background vs foreground from the frame histogram. Often best for "walls blank, person visible". |
+| **percentile** | Keep pixels above the Pth percentile (e.g. 50 = top 50%%). Use `--remove-bg-percentile P`. |
+| **fixed** | User-defined 16-bit value. Use `--remove-bg-thresh N` (e.g. from the 10s debug output). |
+
+Optional: `--remove-bg-blobs N` keeps only the largest N connected heat regions (default 1 = single blob; 0 = no blob filter). Use 1 to drop scattered hot spots on walls. In the viewer, `--remove-bg-smooth` smooths the threshold over time (EMA).
+
+**Examples:**
+
+```bash
+# Otsu + single largest blob (default)
+python -m libseekpy.cli.run_viewer --remove-bg
+
+# Otsu, smooth threshold, keep largest 2 blobs
+python -m libseekpy.cli.run_viewer --remove-bg --remove-bg-smooth --remove-bg-blobs 2
+
+# Fixed threshold from debug output
+python -m libseekpy.cli.run_viewer --remove-bg --remove-bg-mode fixed --remove-bg-thresh 18000
+
+# Snapshot with Otsu + one blob
+python -m libseekpy.cli.run_snapshot --remove-bg out.png
+```
+
 ## Flat-field calibration (test FFC)
 
 1. Cover the lens with an object of uniform temperature (e.g. lens cap or uniform surface).
@@ -159,7 +187,7 @@ Calibration is temperature-sensitive; redo periodically or after long idle.
 - `libseekpy.device`: SeekDevice (open/close, request_set/request_get, fetch_frame)
 - `libseekpy.seek_compact_xr`: SeekCompactXR (open, grab, retrieve, read, dead pixels, FFC)
 - `libseekpy.flat_field`: create_flat_field()
-- `libseekpy.image_utils`: convert_to_greyscale, get_percentile_range, normalize_to_uint8, apply_colormap
+- `libseekpy.image_utils`: convert_to_greyscale, get_percentile_range, normalize_to_uint8, apply_colormap, otsu_threshold, remove_bg_mask
 
 ## Limitations
 

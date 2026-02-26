@@ -17,6 +17,8 @@ from libseekpy.image_utils import (
     get_percentile_range,
     normalize_to_uint8,
     apply_colormap,
+    otsu_threshold,
+    remove_bg_mask,
 )
 
 
@@ -84,7 +86,34 @@ def main() -> int:
     parser.add_argument(
         "--remove-bg",
         action="store_true",
-        help="Remove background: keep only top 25%% heat (75th percentile threshold), rest black",
+        help="Remove background: keep only heat above threshold (see --remove-bg-mode), rest black",
+    )
+    parser.add_argument(
+        "--remove-bg-mode",
+        choices=("percentile", "otsu", "fixed"),
+        default="otsu",
+        help="Threshold for --remove-bg: percentile, otsu, or fixed (default: otsu)",
+    )
+    parser.add_argument(
+        "--remove-bg-thresh",
+        type=float,
+        default=None,
+        metavar="N",
+        help="Fixed 16-bit threshold when --remove-bg-mode fixed",
+    )
+    parser.add_argument(
+        "--remove-bg-percentile",
+        type=float,
+        default=50.0,
+        metavar="P",
+        help="Percentile for --remove-bg when mode=percentile (default 50)",
+    )
+    parser.add_argument(
+        "--remove-bg-blobs",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Keep only largest N connected blobs (0=no filter; default 1)",
     )
     args = parser.parse_args()
 
@@ -93,6 +122,12 @@ def main() -> int:
         range_mode = "fixed" if (args.vmin is not None and args.vmax is not None) else "auto"
     if range_mode == "fixed" and (args.vmin is None or args.vmax is None):
         print("Error: --range-mode fixed requires both --vmin and --vmax")
+        return 1
+    if args.remove_bg and args.remove_bg_mode == "fixed" and args.remove_bg_thresh is None:
+        print("Error: --remove-bg-mode fixed requires --remove-bg-thresh N")
+        return 1
+    if args.remove_bg and args.remove_bg_blobs < 0:
+        print("Error: --remove-bg-blobs must be >= 0")
         return 1
 
     cam = SeekCompactXR(ffc_filename=args.ffc)
@@ -137,8 +172,15 @@ def main() -> int:
                     )
                 grey = normalize_to_uint8(frame, vmin=vmin, vmax=vmax)
             if args.remove_bg:
-                thresh = np.percentile(frame, 75)
-                grey[frame < thresh] = 0
+                if args.remove_bg_mode == "fixed":
+                    thresh = float(args.remove_bg_thresh)
+                elif args.remove_bg_mode == "percentile":
+                    thresh = float(np.percentile(frame, args.remove_bg_percentile))
+                else:
+                    thresh = otsu_threshold(frame)
+                keep_blobs = args.remove_bg_blobs if args.remove_bg_blobs > 0 else None
+                mask = remove_bg_mask(frame, thresh, keep_top_n_blobs=keep_blobs)
+                grey[~mask] = 0
             if args.colormap:
                 try:
                     disp = apply_colormap(grey, args.colormap)

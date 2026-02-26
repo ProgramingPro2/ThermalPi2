@@ -18,6 +18,8 @@ from libseekpy.image_utils import (
     convert_to_greyscale,
     get_percentile_range,
     normalize_to_uint8,
+    otsu_threshold,
+    remove_bg_mask,
 )
 
 
@@ -94,7 +96,39 @@ def main() -> int:
     parser.add_argument(
         "--remove-bg",
         action="store_true",
-        help="Remove background: keep only top 25%% heat (75th percentile threshold), rest black",
+        help="Remove background: keep only heat above threshold (see --remove-bg-mode), rest black",
+    )
+    parser.add_argument(
+        "--remove-bg-mode",
+        choices=("percentile", "otsu", "fixed"),
+        default="otsu",
+        help="Threshold for --remove-bg: percentile=top (100-P)%%, otsu=bimodal, fixed=--remove-bg-thresh (default: otsu)",
+    )
+    parser.add_argument(
+        "--remove-bg-thresh",
+        type=float,
+        default=None,
+        metavar="N",
+        help="Fixed 16-bit threshold for --remove-bg when --remove-bg-mode fixed",
+    )
+    parser.add_argument(
+        "--remove-bg-percentile",
+        type=float,
+        default=50.0,
+        metavar="P",
+        help="Percentile threshold for --remove-bg when mode=percentile (keep pixels above P%%; default 50)",
+    )
+    parser.add_argument(
+        "--remove-bg-blobs",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Keep only largest N connected heat blobs (0=no filter; default 1)",
+    )
+    parser.add_argument(
+        "--remove-bg-smooth",
+        action="store_true",
+        help="Smooth remove-bg threshold over time (EMA) in viewer",
     )
     args = parser.parse_args()
 
@@ -110,6 +144,12 @@ def main() -> int:
         return 1
     if range_mode == "mean_centered" and (args.span <= 0 or not (0 < args.smooth_alpha <= 1)):
         print("Error: --range-mode mean_centered requires --span > 0 and --smooth-alpha in (0, 1]")
+        return 1
+    if args.remove_bg and args.remove_bg_mode == "fixed" and args.remove_bg_thresh is None:
+        print("Error: --remove-bg-mode fixed requires --remove-bg-thresh N")
+        return 1
+    if args.remove_bg and args.remove_bg_blobs < 0:
+        print("Error: --remove-bg-blobs must be >= 0")
         return 1
 
     try:
@@ -170,6 +210,7 @@ def main() -> int:
     smoothed_min: Optional[float] = None
     smoothed_max: Optional[float] = None
     smoothed_mean: Optional[float] = None
+    smoothed_remove_bg_thresh: Optional[float] = None
     last_debug_time = time.monotonic()
     DEBUG_INTERVAL = 10.0
 
@@ -220,8 +261,24 @@ def main() -> int:
                         )
                     grey = normalize_to_uint8(frame, vmin=vmin, vmax=vmax)
                 if args.remove_bg:
-                    thresh = np.percentile(frame, 75)
-                    grey[frame < thresh] = 0
+                    if args.remove_bg_mode == "fixed":
+                        thresh = float(args.remove_bg_thresh)
+                    elif args.remove_bg_mode == "percentile":
+                        thresh = float(np.percentile(frame, args.remove_bg_percentile))
+                    else:
+                        thresh = otsu_threshold(frame)
+                    if args.remove_bg_smooth:
+                        if smoothed_remove_bg_thresh is None:
+                            smoothed_remove_bg_thresh = thresh
+                        else:
+                            smoothed_remove_bg_thresh = (
+                                args.smooth_alpha * thresh
+                                + (1 - args.smooth_alpha) * smoothed_remove_bg_thresh
+                            )
+                        thresh = smoothed_remove_bg_thresh
+                    keep_blobs = args.remove_bg_blobs if args.remove_bg_blobs > 0 else None
+                    mask = remove_bg_mask(frame, thresh, keep_top_n_blobs=keep_blobs)
+                    grey[~mask] = 0
 
                 now = time.monotonic()
                 if now - last_debug_time >= DEBUG_INTERVAL:
