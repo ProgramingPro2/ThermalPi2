@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "libseekpy"
+version = "0.1.0"
+description = "Python driver for Seek Thermal Compact/CompactXR (libseek-thermal protocol)"
+readme = "docs/README_seek_xr.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pyusb>=1.2.0",
+    "numpy>=1.20.0",
+    "matplotlib>=3.5.0",
+    "opencv-python-headless>=4.5.0",
+    "Pillow>=9.0.0",
+]
+
+[project.scripts]
+seek-viewer = "libseekpy.cli.run_viewer:main"
+seek-snapshot = "libseekpy.cli.run_snapshot:main"
+seek-flat-field = "libseekpy.cli.run_flat_field:main"
+seek-debug-capture = "libseekpy.cli.run_debug_capture:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
