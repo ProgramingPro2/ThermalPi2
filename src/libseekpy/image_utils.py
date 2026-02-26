@@ -3,7 +3,7 @@ Image utilities: 14-bit to 8-bit grayscale conversion (histogram enhancement),
 optional colormap for display.
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -48,6 +48,21 @@ def apply_colormap(grey_8bit: np.ndarray, colormap: str = "COLORMAP_INFERNO") ->
         raise ImportError("opencv-python is required for apply_colormap") from None
     cmap = getattr(cv2, colormap, cv2.COLORMAP_INFERNO)
     return cv2.applyColorMap(grey_8bit, cmap)
+
+
+def get_percentile_range(
+    arr_uint16: np.ndarray,
+    low_percentile: float = 2.0,
+    high_percentile: float = 98.0,
+) -> Tuple[float, float]:
+    """
+    Return (vmin, vmax) from percentile of pixel values. Reduces impact of
+    outliers/hot pixels. For use with normalize_to_uint8.
+    """
+    a = np.asarray(arr_uint16, dtype=np.float64).ravel()
+    vmin = float(np.percentile(a, low_percentile))
+    vmax = float(np.percentile(a, high_percentile))
+    return (vmin, vmax)
 
 
 def normalize_to_uint8(

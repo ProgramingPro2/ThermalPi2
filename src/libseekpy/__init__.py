@@ -16,7 +16,12 @@ from .constants import (
 from .device import SeekDevice, SeekDeviceError
 from .seek_compact_xr import SeekCompactXR, SeekCompactXRError
 from .flat_field import create_flat_field
-from .image_utils import convert_to_greyscale, normalize_to_uint8, apply_colormap
+from .image_utils import (
+    convert_to_greyscale,
+    get_percentile_range,
+    normalize_to_uint8,
+    apply_colormap,
+)
 
 __all__ = [
     "SeekDevice",
@@ -25,6 +30,7 @@ __all__ = [
     "SeekCompactXRError",
     "create_flat_field",
     "convert_to_greyscale",
+    "get_percentile_range",
     "normalize_to_uint8",
     "apply_colormap",
     "DeviceCommand",

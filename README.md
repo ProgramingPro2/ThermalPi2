@@ -79,11 +79,12 @@ From project root after `pip install -e .` (or with `PYTHONPATH=src`):
 
 - **Viewer:** `python -m libseekpy.cli.run_viewer`  
   Uses matplotlib (no GTK/OpenCV GUI required). No warmup by default; optional `--warmup N`.  
-  Contrast: `--vmin` / `--vmax` (16-bit range mapped to black/white; default auto).  
-  Options: `-F flat_field.png` (test FFC), `--colormap inferno`, `--no-colormap`, `--hist`. Keys: `s` freeze, `q` quit.
+  Contrast: `--range-mode auto|fixed|smoothed|percentile|mean_centered` (default: auto, or fixed if both `--vmin` and `--vmax` set).  
+  `mean_centered` = fixed span (default 600) centered on smoothed frame mean; use `--span N`, `--smooth-alpha`.  
+  Options: `-F flat_field.png` (test FFC), `--colormap inferno`, `--no-colormap`, `--hist`, `--remove-bg` (keep only top 25%% heat). Keys: `s` freeze, `q` quit.
 
 - **Snapshot:** `python -m libseekpy.cli.run_snapshot [output.png]`  
-  Options: `-n count`, `-F flat_field.png` (test FFC), `--vmin` / `--vmax` (contrast), `--hist`, `--16bit`, `--colormap COLORMAP_INFERNO`.
+  Options: `-n count`, `-F flat_field.png` (test FFC), `--range-mode auto|fixed|percentile`, `--vmin`/`--vmax` (for fixed), `--percentile LOW HIGH` (for percentile), `--hist`, `--remove-bg`, `--16bit`, `--colormap COLORMAP_INFERNO`.
 
 - **Debug capture:** `python -m libseekpy.cli.run_debug_capture`  
   Saves debug_thermal.png, debug_thermal_grey.png, debug_thermal_16bit.png. Optional `--warmup N`, `-F flat_field.png`, `--vmin` / `--vmax`.
@@ -91,6 +92,55 @@ From project root after `pip install -e .` (or with `PYTHONPATH=src`):
 - **Flat-field creation:** `python -m libseekpy.cli.run_flat_field`  
   Cover the lens with uniform temperature first.  
   Options: `-o flat_field.png`, `-s 100`, `-w 10`, `-F existing_ffc.png`.
+
+## Contrast range modes (viewer and snapshot)
+
+Display contrast is set by which 16-bit range is mapped to black/white. By default the viewer uses the **brightest and darkest pixels in each frame** (auto), which can flicker when the scene changes. You can switch to other modes:
+
+| Mode | When to use | How to use |
+|------|-------------|------------|
+| **auto** | Default; follow scene min/max every frame (may flicker). | Omit `--range-mode` and do not set both `--vmin` and `--vmax`. |
+| **fixed** | Stable scale when you know the 16-bit range (e.g. room temp). | `--vmin N --vmax M` or `--range-mode fixed --vmin N --vmax M`. |
+| **smoothed** | Stable scale that slowly follows the scene (viewer only). | `--range-mode smoothed`. Optional: `--smooth-alpha 0.05` (smaller = smoother, default 0.1). |
+| **percentile** | Ignore hot/cold outliers (e.g. single hot pixel). | `--range-mode percentile`. Optional: `--percentile 2 98` (default). |
+| **mean_centered** | Fixed contrast span; center follows smoothed frame mean (compensates camera drift). | `--range-mode mean_centered`. Optional: `--span 600` (default), `--smooth-alpha 0.1`. |
+
+**Viewer examples:**
+
+```bash
+# Auto (default): range = min/max of each frame
+python -m libseekpy.cli.run_viewer
+
+# Smoothed: range follows scene slowly, less flicker
+python -m libseekpy.cli.run_viewer --range-mode smoothed
+
+# Smoothed with stronger smoothing (slower to react)
+python -m libseekpy.cli.run_viewer --range-mode smoothed --smooth-alpha 0.05
+
+# Percentile: 2nd–98th percentile of each frame (dampens outliers)
+python -m libseekpy.cli.run_viewer --range-mode percentile
+
+# Fixed: always map 16-bit 10000–20000 to black–white
+python -m libseekpy.cli.run_viewer --vmin 10000 --vmax 20000
+
+# Mean-centered: span 600 centered on smoothed mean (stable contrast, tracks camera heating)
+python -m libseekpy.cli.run_viewer --range-mode mean_centered
+```
+
+**Snapshot examples:**
+
+```bash
+# Auto (default)
+python -m libseekpy.cli.run_snapshot out.png
+
+# Percentile for one frame
+python -m libseekpy.cli.run_snapshot --range-mode percentile out.png
+
+# Fixed range
+python -m libseekpy.cli.run_snapshot --vmin 10000 --vmax 20000 out.png
+```
+
+Snapshot does not support `smoothed` (single-frame capture). Use `--hist` for histogram-based enhancement instead of min/max or percentile.
 
 ## Flat-field calibration (test FFC)
 
@@ -109,7 +159,7 @@ Calibration is temperature-sensitive; redo periodically or after long idle.
 - `libseekpy.device`: SeekDevice (open/close, request_set/request_get, fetch_frame)
 - `libseekpy.seek_compact_xr`: SeekCompactXR (open, grab, retrieve, read, dead pixels, FFC)
 - `libseekpy.flat_field`: create_flat_field()
-- `libseekpy.image_utils`: convert_to_greyscale, normalize_to_uint8, apply_colormap
+- `libseekpy.image_utils`: convert_to_greyscale, get_percentile_range, normalize_to_uint8, apply_colormap
 
 ## Limitations
 

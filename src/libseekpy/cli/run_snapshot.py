@@ -12,7 +12,12 @@ import numpy as np
 
 from libseekpy import SeekCompactXR, SeekCompactXRError
 from libseekpy.constants import THERMAL_HEIGHT, THERMAL_WIDTH
-from libseekpy.image_utils import convert_to_greyscale, normalize_to_uint8, apply_colormap
+from libseekpy.image_utils import (
+    convert_to_greyscale,
+    get_percentile_range,
+    normalize_to_uint8,
+    apply_colormap,
+)
 
 
 def main() -> int:
@@ -47,6 +52,20 @@ def main() -> int:
         help="Contrast: upper 16-bit bound for 8-bit output (default: auto)",
     )
     parser.add_argument(
+        "--range-mode",
+        choices=("auto", "fixed", "percentile"),
+        default=None,
+        help="Contrast range for 8-bit: auto=min/max, fixed=--vmin/--vmax, percentile (default: auto unless both --vmin and --vmax set)",
+    )
+    parser.add_argument(
+        "--percentile",
+        type=float,
+        nargs=2,
+        default=[2.0, 98.0],
+        metavar=("LOW", "HIGH"),
+        help="Percentile range for --range-mode percentile (default: 2 98)",
+    )
+    parser.add_argument(
         "--16bit",
         action="store_true",
         dest="save_16bit",
@@ -62,7 +81,19 @@ def main() -> int:
         action="store_true",
         help="Use histogram enhancement for 8-bit instead of min-max normalize",
     )
+    parser.add_argument(
+        "--remove-bg",
+        action="store_true",
+        help="Remove background: keep only top 25%% heat (75th percentile threshold), rest black",
+    )
     args = parser.parse_args()
+
+    range_mode = args.range_mode
+    if range_mode is None:
+        range_mode = "fixed" if (args.vmin is not None and args.vmax is not None) else "auto"
+    if range_mode == "fixed" and (args.vmin is None or args.vmax is None):
+        print("Error: --range-mode fixed requires both --vmin and --vmax")
+        return 1
 
     cam = SeekCompactXR(ffc_filename=args.ffc)
     try:
@@ -94,7 +125,20 @@ def main() -> int:
             if args.hist:
                 grey = convert_to_greyscale(frame)
             else:
-                grey = normalize_to_uint8(frame, vmin=args.vmin, vmax=args.vmax)
+                if range_mode == "auto":
+                    vmin, vmax = None, None
+                elif range_mode == "fixed":
+                    vmin, vmax = args.vmin, args.vmax
+                else:
+                    vmin, vmax = get_percentile_range(
+                        frame,
+                        low_percentile=args.percentile[0],
+                        high_percentile=args.percentile[1],
+                    )
+                grey = normalize_to_uint8(frame, vmin=vmin, vmax=vmax)
+            if args.remove_bg:
+                thresh = np.percentile(frame, 75)
+                grey[frame < thresh] = 0
             if args.colormap:
                 try:
                     disp = apply_colormap(grey, args.colormap)
