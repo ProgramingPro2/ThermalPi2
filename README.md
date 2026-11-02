@@ -193,3 +193,7 @@ Calibration is temperature-sensitive; redo periodically or after long idle.
 
 - No absolute temperature readings (same as libseek-thermal).
 - Seek CompactPRO (0x0011) and Seek Nano are not supported by this package.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
